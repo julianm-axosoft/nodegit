@@ -42,7 +42,8 @@ NAN_METHOD(GitLibgit2::Opts)
       break;
     }
     // GET ssize_t
-    case GIT_OPT_GET_CACHED_MEMORY: {
+    case GIT_OPT_GET_CACHED_MEMORY:
+    case GIT_OPT_GET_CHECKOUT_THREADS: {
       ssize_t option_value;
       if (git_libgit2_opts(from_option, &option_value)) {
         return Nan::ThrowError("git_libgit2_opts failed");
@@ -112,7 +113,8 @@ NAN_METHOD(GitLibgit2::Opts)
     // SET size_t
     case GIT_OPT_SET_MWINDOW_SIZE:
     case GIT_OPT_SET_MWINDOW_MAPPED_LIMIT:
-    case GIT_OPT_SET_PACK_MAX_OBJECTS: {
+    case GIT_OPT_SET_PACK_MAX_OBJECTS:
+    case GIT_OPT_SET_CHECKOUT_THREADS: {
       if (info.Length() < 2 || !info[1]->IsNumber()) {
         return Nan::ThrowError("Number option is required.");
       }
