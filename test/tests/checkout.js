@@ -3,7 +3,7 @@ var path = require("path");
 var fse = require("fs-extra");
 var local = path.join.bind(path, __dirname);
 
-describe("Checkout", function() {
+describe.only("Checkout", function() {
   var NodeGit = require("../../");
   var Repository = NodeGit.Repository;
   var Checkout = NodeGit.Checkout;
@@ -185,5 +185,45 @@ describe("Checkout", function() {
       var finalContent = fse.readFileSync(packageJsonPath, "utf-8");
       assert.equal(finalContent, "\n");
     });
+  });
+
+  it.only("checkout a branch is improved with 2 threads", async function() {
+    const test = this;
+    const { performance } = require("perf_hooks");
+
+    try {
+      const t1core_a = performance.now();
+      NodeGit.Libgit2.opts(NodeGit.Libgit2.OPT.SET_CHECKOUT_THREADS, 1);
+      await test.repository.checkoutBranch(checkoutBranchName);
+      let packageContent = fse.readFileSync(packageJsonPath, "utf-8");
+      assert.ok(!~packageContent.indexOf("\"ejs\": \"~1.0.0\","));
+      let statuses = await test.repository.getStatus();
+      assert.equal(statuses.length, 0);
+      await test.repository.checkoutBranch("master");
+      packageContent = fse.readFileSync(packageJsonPath, "utf-8");
+      assert.ok(~packageContent.indexOf("\"ejs\": \"~1.0.0\","));
+      const t1core = performance.now() - t1core_a;
+
+
+      const t2cores_a = performance.now();
+      NodeGit.Libgit2.opts(NodeGit.Libgit2.OPT.SET_CHECKOUT_THREADS, 2);
+      await test.repository.checkoutBranch(checkoutBranchName);
+      packageContent = fse.readFileSync(packageJsonPath, "utf-8");
+      assert.ok(!~packageContent.indexOf("\"ejs\": \"~1.0.0\","));
+      statuses = await test.repository.getStatus();
+      assert.equal(statuses.length, 0);
+      await test.repository.checkoutBranch("master");
+      packageContent = fse.readFileSync(packageJsonPath, "utf-8");
+      assert.ok(~packageContent.indexOf("\"ejs\": \"~1.0.0\","));
+      const t2cores = performance.now() - t2cores_a;
+
+      const os = require("os");
+      console.log("Number of cores:", os.cpus().length);
+      console.log("Time with 1 core:", t1core);
+      console.log("Time with 2 cores:", t2cores);
+      assert.ok(t2cores * 1.05 < t1core); // 5% faster at least
+    } finally {
+      NodeGit.Libgit2.opts(NodeGit.Libgit2.OPT.SET_CHECKOUT_THREADS, 0);  // default value
+    }
   });
 });
