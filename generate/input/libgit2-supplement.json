@@ -1013,6 +1013,37 @@
           "type": "int"
         },
         "group": "status_list"
+      },
+      "git_tree_get_all_entries": {
+        "type": "function",
+        "args": [
+          {
+            "name": "repo",
+            "type": "git_repository *"
+          }
+        ],
+        "isManual": true,
+        "cFile": "generate/templates/manual/tree/get_all_entries.cc",
+        "isAsync": false,
+        "isPrototypeMethod": true,
+        "return": {
+          "type": "git_tree_index **"
+        },
+        "group": "tree"
+      },
+      "git_tree_get_entries": {
+        "type": "function",
+        "args": [
+          {
+            "name": "out",
+            "type": "void *"
+          }
+        ],
+        "isManual": true,
+        "cFile": "generate/templates/manual/tree/get_entries.cc",
+        "isAsync": false,
+        "isPrototypeMethod": true,
+        "group": "tree"
       }
     },
     "groups": [
@@ -1221,6 +1252,13 @@
           "git_status_list_free",
           "git_status_list_get_perfdata",
           "git_status_list_new"
+        ]
+      ],
+      [
+        "tree",
+        [
+          "git_tree_get_entries",
+          "git_tree_get_all_entries"
         ]
       ],
       [
