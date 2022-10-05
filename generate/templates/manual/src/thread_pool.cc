@@ -7,7 +7,6 @@
 #include <queue>
 #include <thread>
 #include <utility>
-#include <atomic> // Temporary workaround for LFS checkout. Code added to be reverted.
 
 extern "C" {
   #include <git2/sys/custom_tls.h>
@@ -82,11 +81,8 @@ namespace nodegit {
           : Event(CALLBACK_TYPE), callback(initCallback)
         {}
 
-        // Temporary workaround for LFS checkout. Code modified to be reverted.
-        // ThreadPool::Callback operator()(ThreadPool::QueueCallbackFn queueCb, ThreadPool::Callback completedCb) {
-        //   return callback(queueCb, completedCb);
-        ThreadPool::Callback operator()(ThreadPool::QueueCallbackFn queueCb, ThreadPool::Callback completedCb, bool isThreaded) {
-          return callback(queueCb, completedCb, isThreaded);
+        ThreadPool::Callback operator()(ThreadPool::QueueCallbackFn queueCb, ThreadPool::Callback completedCb) {
+          return callback(queueCb, completedCb);
         }
 
         private:
@@ -105,10 +101,6 @@ namespace nodegit {
       // Orchestrator needs to call this to ensure that the executor is done reading from
       // the Orchestrator's memory
       void WaitForThreadClose();
-
-      // Temporary workaround for LFS checkout. Code added to be reverted.
-      // Returns true if the task running spawned threads within libgit2
-      bool IsGitThreaded() { return currentGitThreads > kInitialGitThreads; }
 
       static Nan::AsyncResource *GetCurrentAsyncResource();
 
@@ -147,12 +139,6 @@ namespace nodegit {
       PostCompletedEventToOrchestratorFn postCompletedEventToOrchestrator;
       TakeNextTaskFn takeNextTask;
       std::thread thread;
-
-      // Temporary workaround for LFS checkout. Code added to be reverted.
-      static constexpr int kInitialGitThreads {0};
-      // Number of threads spawned internally by libgit2 to deal with
-      // the task of this Executor instance. Defaults to kInitialGitThreads.
-      std::atomic<int> currentGitThreads {kInitialGitThreads};      
   };
 
   Executor::Executor(
@@ -183,9 +169,6 @@ namespace nodegit {
       }
 
       WorkTask *workTask = static_cast<WorkTask *>(task.get());
-
-      // Temporary workaround for LFS checkout. Code added to be reverted.
-      currentGitThreads = kInitialGitThreads;
 
       currentAsyncResource = workTask->asyncResource;
       currentCallbackErrorHandle = workTask->callbackErrorHandle;
@@ -238,8 +221,6 @@ namespace nodegit {
   }
 
   void *Executor::RetrieveTLSForLibgit2ChildThread() {
-    // Temporary workaround for LFS checkout. Code added to be reverted.
-    ++Executor::executor->currentGitThreads;
     return Executor::executor;
   }
 
@@ -249,8 +230,6 @@ namespace nodegit {
 
   void Executor::TeardownTLSOnLibgit2ChildThread() {
     if (!isExecutorThread) {
-      // Temporary workaround for LFS checkout. Code added to be reverted.
-      --Executor::executor->currentGitThreads;
       Executor::executor = nullptr;
     }
   }
@@ -399,46 +378,21 @@ namespace nodegit {
             std::shared_ptr<std::condition_variable> callbackCondition(new std::condition_variable);
             bool hasCompleted = false;
 
-            // Temporary workaround for LFS checkout. Code removed to be reverted.
-            //LockMaster::TemporaryUnlock temporaryUnlock;
-
-            // Temporary workaround for LFS checkout. Code added to be reverted.
-            bool isWorkerThreaded = executor.IsGitThreaded();
-            ThreadPool::Callback callbackCompleted = []() {};
-            if (!isWorkerThreaded) {
-              callbackCompleted = [callbackCondition, callbackMutex, &hasCompleted]() {
-                std::lock_guard<std::mutex> lock(*callbackMutex);
-                hasCompleted = true;
-                callbackCondition->notify_one();
-              };
-            }
-            std::unique_ptr<LockMaster::TemporaryUnlock> temporaryUnlock {nullptr};
-            if (!isWorkerThreaded) {
-              temporaryUnlock = std::make_unique<LockMaster::TemporaryUnlock>();
-            }
-
+            LockMaster::TemporaryUnlock temporaryUnlock;
             auto onCompletedCallback = (*callbackEvent)(
               [this](ThreadPool::Callback callback, ThreadPool::Callback cancelCallback) {
                 queueCallbackOnJSThread(callback, cancelCallback, false);
               },
-              // Temporary workaround for LFS checkout. Code modified to be reverted.
-              /*
               [callbackCondition, callbackMutex, &hasCompleted]() {
                 std::lock_guard<std::mutex> lock(*callbackMutex);
                 hasCompleted = true;
                 callbackCondition->notify_one();
               }
-              */
-              callbackCompleted,
-              isWorkerThreaded
             );
 
-            // Temporary workaround for LFS checkout. Code modified to be reverted.
-            if (!isWorkerThreaded) {
-              std::unique_lock<std::mutex> lock(*callbackMutex);
-              while (!hasCompleted) callbackCondition->wait(lock);
-              onCompletedCallback();
-            }
+            std::unique_lock<std::mutex> lock(*callbackMutex);
+            while (!hasCompleted) callbackCondition->wait(lock);
+            onCompletedCallback();
           }
 
           queueCallbackOnJSThread(
@@ -525,6 +479,10 @@ namespace nodegit {
 
       void QueueCallbackOnJSThread(ThreadPool::Callback callback, ThreadPool::Callback cancelCallback, bool isWork);
 
+      static void RunJSThreadCallbacksFromOrchestrator(uv_async_t *handle);
+
+      void RunJSThreadCallbacksFromOrchestrator();
+
       static void RunLoopCallbacks(uv_async_t *handle);
 
       void Shutdown(std::unique_ptr<AsyncContextCleanupHandle> cleanupHandle);
@@ -540,6 +498,7 @@ namespace nodegit {
 
     private:
       bool isMarkedForDeletion;
+      nodegit::Context *currentContext;
 
       struct JSThreadCallback {
         JSThreadCallback(ThreadPool::Callback callback, ThreadPool::Callback cancelCallback, bool isWork)
@@ -580,9 +539,9 @@ namespace nodegit {
       std::vector<Orchestrator> orchestrators;
   };
 
-  // context required to be passed to Orchestrators, but ThreadPoolImpl doesn't need to keep it
   ThreadPoolImpl::ThreadPoolImpl(int numberOfThreads, uv_loop_t *loop, nodegit::Context *context)
     : isMarkedForDeletion(false),
+      currentContext(context),
       orchestratorJobMutex(new std::mutex),
       jsThreadCallbackMutex(new std::mutex)
   {
