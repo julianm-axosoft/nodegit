@@ -56,7 +56,7 @@ NAN_METHOD({{ cppClassName }}::{{ cppFunctionName }}) {
         {% if arg.cppClassName == 'Array' %}
           {
             v8::Local<v8::Array> tempArray = v8::Local<v8::Array>::Cast(info[{{ arg.jsArg }}]);
-            baton->{{ arg.name }} = new {{ arg.cType|unPointer }}[tempArray->Length()];
+            baton->{{ arg.name }} = ({{ arg.cType|unPointer }}*)malloc(sizeof({{ arg.cType|unPointer }}) * tempArray->Length());
             for (uint32_t i = 0; i < tempArray->Length(); ++i) {
               auto conversionResult = Configurable{{ arg.arrayElementCppClassName }}::fromJavascript(
                 nodegitContext,
@@ -66,12 +66,11 @@ NAN_METHOD({{ cppClassName }}::{{ cppFunctionName }}) {
               if (!conversionResult.result) {
                 // TODO free previously allocated memory
                 free(baton->{{ arg.name }});
-                delete baton;
                 return Nan::ThrowError(Nan::New(conversionResult.error).ToLocalChecked());
               }
 
               auto convertedObject = conversionResult.result;
-              cleanupHandles["{{ arg.name }}"] = convertedObject;
+              cleanupHandles[std::string("{{ arg.name }}") + std::to_string(i)] = convertedObject;
               baton->{{ arg.name }}[i] = *convertedObject->GetValue();
             }
           }
