@@ -66,6 +66,7 @@ NAN_METHOD({{ cppClassName }}::{{ cppFunctionName }}) {
               if (!conversionResult.result) {
                 // TODO free previously allocated memory
                 free(baton->{{ arg.name }});
+                delete baton;
                 return Nan::ThrowError(Nan::New(conversionResult.error).ToLocalChecked());
               }
 
